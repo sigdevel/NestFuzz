@@ -30,8 +30,14 @@ b
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/LoopIterator.h"
 #include "llvm/Analysis/LoopPass.h"
+#include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Config/llvm-config.h"
+#if LLVM_VERSION_MAJOR >= 11
+#include "llvm/Transforms/Utils/ScalarEvolutionExpander.h"
+#else
 #include "llvm/Analysis/ScalarEvolutionExpander.h"
+#endif
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Analysis/IVUsers.h"
@@ -51,11 +57,14 @@ b
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/VirtualFileSystem.h"
+#if __has_include("llvm/Transforms/IPO/PassManagerBuilder.h")
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
+#define HAVE_LEGACY_PASS_MANAGER_BUILDER 1
+#endif
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils.h"
 #include "llvm/Pass.h"
-#include "llvm/PassAnalysisSupport.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/AsmParser/Parser.h"
 #include "llvm/Passes/PassPlugin.h"
@@ -249,8 +258,8 @@ u32 LoopHandlingPass::getRandomLoopId() { return getRandomNum(); }
 u32 LoopHandlingPass::getLoopId(Loop *L) {
   Function &F = *L->getHeader()->getParent();
   u32 h = 0;
-  std::string funcName = F.getName();
-  std::string headerName = L->getName();
+  std::string funcName = F.getName().str();
+  std::string headerName = L->getName().str();
   funcName += "$";
   funcName += headerName;
   if (headerName != "<unnamed loop>" ) {
@@ -271,7 +280,7 @@ u32 LoopHandlingPass::getLoopId(Loop *L) {
 }
 
 u32 LoopHandlingPass::getFunctionId(Function *F) {
-  return hashName(F->getName());
+  return hashName(F->getName().str());
 }
 
 void LoopHandlingPass::initVariables(Module &M) {
@@ -321,10 +330,8 @@ void LoopHandlingPass::initVariables(Module &M) {
   FunctionType *LoadLabelDumpArgsTy = FunctionType::get(VoidTy, LoadLabelDumpArgs, false);
   {
     AttributeList AL;
-    AL = AL.addAttribute(CTX, AttributeList::FunctionIndex,
-                         Attribute::NoInline);
-    AL = AL.addAttribute(CTX, AttributeList::FunctionIndex,
-                         Attribute::OptimizeNone);
+    AL = AL.addFnAttribute(CTX, Attribute::NoInline);
+    AL = AL.addFnAttribute(CTX, Attribute::OptimizeNone);
     LoadLabelDumpFn = M.getOrInsertFunction("__chunk_get_load_label", LoadLabelDumpArgsTy, AL);   
   }
 
@@ -332,10 +339,8 @@ void LoopHandlingPass::initVariables(Module &M) {
   FunctionType *PushNewObjArgsTy = FunctionType::get(VoidTy, PushNewObjArgs, false);
   {
     AttributeList AL;
-    AL = AL.addAttribute(CTX, AttributeList::FunctionIndex,
-                         Attribute::NoInline);
-    AL = AL.addAttribute(CTX, AttributeList::FunctionIndex,
-                         Attribute::OptimizeNone);
+    AL = AL.addFnAttribute(CTX, Attribute::NoInline);
+    AL = AL.addFnAttribute(CTX, Attribute::OptimizeNone);
     PushNewObjFn = M.getOrInsertFunction("__chunk_push_new_obj", PushNewObjArgsTy, AL);   
   }
 
@@ -343,10 +348,8 @@ void LoopHandlingPass::initVariables(Module &M) {
   FunctionType *DumpEachIterArgsTy = FunctionType::get(VoidTy, DumpEachIterArgs, false);
   {
     AttributeList AL;
-    AL = AL.addAttribute(CTX, AttributeList::FunctionIndex,
-                         Attribute::NoInline);
-    AL = AL.addAttribute(CTX, AttributeList::FunctionIndex,
-                         Attribute::OptimizeNone);
+    AL = AL.addFnAttribute(CTX, Attribute::NoInline);
+    AL = AL.addFnAttribute(CTX, Attribute::OptimizeNone);
     DumpEachIterFn = M.getOrInsertFunction("__chunk_dump_each_iter", DumpEachIterArgsTy, AL);   
   }
 
@@ -354,10 +357,8 @@ void LoopHandlingPass::initVariables(Module &M) {
   FunctionType *PopObjArgsTy = FunctionType::get(Int8Ty, PopObjArgs, false);
   {
     AttributeList AL;
-    AL = AL.addAttribute(CTX, AttributeList::FunctionIndex,
-                         Attribute::NoInline);
-    AL = AL.addAttribute(CTX, AttributeList::FunctionIndex,
-                         Attribute::OptimizeNone);
+    AL = AL.addFnAttribute(CTX, Attribute::NoInline);
+    AL = AL.addFnAttribute(CTX, Attribute::OptimizeNone);
     PopObjFn = M.getOrInsertFunction("__chunk_pop_obj", PopObjArgsTy, AL);   
   }
 
@@ -365,10 +366,8 @@ void LoopHandlingPass::initVariables(Module &M) {
   ChunkCmpTtTy = FunctionType::get(VoidTy, ChunkCmpTtArgs, false);
   {
     AttributeList AL;
-    AL = AL.addAttribute(CTX, AttributeList::FunctionIndex,
-                         Attribute::NoInline);
-    AL = AL.addAttribute(CTX, AttributeList::FunctionIndex,
-                         Attribute::OptimizeNone);
+    AL = AL.addFnAttribute(CTX, Attribute::NoInline);
+    AL = AL.addFnAttribute(CTX, Attribute::OptimizeNone);
     ChunkCmpTT = M.getOrInsertFunction("__chunk_trace_cmp_tt", ChunkCmpTtTy, AL);   
   }
   
@@ -376,10 +375,8 @@ void LoopHandlingPass::initVariables(Module &M) {
   ChunkSwTtTy = FunctionType::get(VoidTy, ChunkSwTtArgs, false);
   {
     AttributeList AL;
-    AL = AL.addAttribute(CTX, AttributeList::FunctionIndex,
-                         Attribute::NoInline);
-    AL = AL.addAttribute(CTX, AttributeList::FunctionIndex,
-                         Attribute::OptimizeNone);
+    AL = AL.addFnAttribute(CTX, Attribute::NoInline);
+    AL = AL.addFnAttribute(CTX, Attribute::OptimizeNone);
     ChunkSwTT = M.getOrInsertFunction("__chunk_trace_switch_tt", ChunkSwTtTy, AL);   
   }
 
@@ -387,10 +384,8 @@ void LoopHandlingPass::initVariables(Module &M) {
   ChunkCmpFnTtTy = FunctionType::get(VoidTy, ChunkCmpFnTtArgs, false);
   {
     AttributeList AL;
-    AL = AL.addAttribute(CTX, AttributeList::FunctionIndex,
-                         Attribute::NoInline);
-    AL = AL.addAttribute(CTX, AttributeList::FunctionIndex,
-                         Attribute::OptimizeNone);
+    AL = AL.addFnAttribute(CTX, Attribute::NoInline);
+    AL = AL.addFnAttribute(CTX, Attribute::OptimizeNone);
     ChunkCmpFnTT = M.getOrInsertFunction("__chunk_trace_cmpfn_tt", ChunkCmpFnTtTy, AL);   
   }
 
@@ -398,10 +393,8 @@ void LoopHandlingPass::initVariables(Module &M) {
   ChunkOffsFnTtTy = FunctionType::get(VoidTy, ChunkOffsFnTtArgs, false);
   {
     AttributeList AL;
-    AL = AL.addAttribute(CTX, AttributeList::FunctionIndex,
-                         Attribute::NoInline);
-    AL = AL.addAttribute(CTX, AttributeList::FunctionIndex,
-                         Attribute::OptimizeNone);
+    AL = AL.addFnAttribute(CTX, Attribute::NoInline);
+    AL = AL.addFnAttribute(CTX, Attribute::OptimizeNone);
     ChunkOffsFnTT = M.getOrInsertFunction("__chunk_trace_offsfn_tt", ChunkOffsFnTtTy, AL);   
   }
   
@@ -409,10 +402,8 @@ void LoopHandlingPass::initVariables(Module &M) {
   ChunkLenFnTtTy = FunctionType::get(VoidTy, ChunkLenFnTtArgs, false);
   {
     AttributeList AL;
-    AL = AL.addAttribute(CTX, AttributeList::FunctionIndex,
-                         Attribute::NoInline);
-    AL = AL.addAttribute(CTX, AttributeList::FunctionIndex,
-                         Attribute::OptimizeNone);
+    AL = AL.addFnAttribute(CTX, Attribute::NoInline);
+    AL = AL.addFnAttribute(CTX, Attribute::OptimizeNone);
     ChunkLenFnTT = M.getOrInsertFunction("__chunk_trace_lenfn_tt", ChunkLenFnTtTy, AL);   
   }
 
@@ -420,10 +411,8 @@ void LoopHandlingPass::initVariables(Module &M) {
   ChunkTraceBranchTtTy = FunctionType::get(VoidTy, ChunkTraceBranchArgs, false);
   {
     AttributeList AL;
-    AL = AL.addAttribute(CTX, AttributeList::FunctionIndex,
-                         Attribute::NoInline);
-    AL = AL.addAttribute(CTX, AttributeList::FunctionIndex,
-                         Attribute::OptimizeNone);
+    AL = AL.addFnAttribute(CTX, Attribute::NoInline);
+    AL = AL.addFnAttribute(CTX, Attribute::OptimizeNone);
     ChunkTraceBranchTT = M.getOrInsertFunction("__chunk_trace_branch_tt", ChunkTraceBranchTtTy, AL);
   }
 
@@ -431,10 +420,8 @@ void LoopHandlingPass::initVariables(Module &M) {
   DebugInstLocTy = FunctionType::get(VoidTy, DebugInstLocFnArgs, false);
   {
     AttributeList AL;
-    AL = AL.addAttribute(CTX, AttributeList::FunctionIndex,
-                         Attribute::NoInline);
-    AL = AL.addAttribute(CTX, AttributeList::FunctionIndex,
-                         Attribute::OptimizeNone);
+    AL = AL.addFnAttribute(CTX, Attribute::NoInline);
+    AL = AL.addFnAttribute(CTX, Attribute::OptimizeNone);
     DebugInstLocFn = M.getOrInsertFunction("__debug_inst_loc_fn", DebugInstLocTy, AL);
   }
 
@@ -493,12 +480,12 @@ void LoopHandlingPass::visitCallInst(Instruction *Inst) {
   //Handle indirect call
   if(!Callee){
     visitExploitation(Inst);
-    u32 hFunc = hashName(Caller->getName());
+    u32 hFunc = hashName(Caller->getName().str());
     processCallInst(Inst, hFunc);
     return;
   }
 
-  if (!Callee || isa<InlineAsm>(Caller->getCalledValue())) {
+  if (!Callee || isa<InlineAsm>(Caller->getCalledOperand())) {
     return;
   }
 
@@ -507,7 +494,7 @@ void LoopHandlingPass::visitCallInst(Instruction *Inst) {
   if (Callee->isIntrinsic()) {
     return;
   }
-  if (Callee->getName().startswith(StringRef("__chunk_")) || Callee->getName().startswith(StringRef("__dfsw_")) ||Callee->getName().startswith(StringRef("asan.module"))) {
+  if (Callee->getName().starts_with(StringRef("__chunk_")) || Callee->getName().starts_with(StringRef("__dfsw_")) ||Callee->getName().starts_with(StringRef("asan.module"))) {
     return;
   }
   if (Callee->isDeclaration()) {
@@ -524,7 +511,7 @@ void LoopHandlingPass::visitInvokeInst(Instruction *Inst) {
   InvokeInst *Caller = dyn_cast<InvokeInst>(Inst);
   Function *Callee = Caller->getCalledFunction();
 
-  if (!Callee || isa<InlineAsm>(Caller->getCalledValue())) {
+  if (!Callee || isa<InlineAsm>(Caller->getCalledOperand())) {
     return;
   }
   visitExploitation(Inst);
@@ -533,7 +520,7 @@ void LoopHandlingPass::visitInvokeInst(Instruction *Inst) {
     return;
   }
 
-  if (Callee->getName().startswith(StringRef("__chunk_")) || Callee->getName().startswith(StringRef("__dfsw_")) ||Callee->getName().startswith(StringRef("asan.module"))) {
+  if (Callee->getName().starts_with(StringRef("__chunk_")) || Callee->getName().starts_with(StringRef("__dfsw_")) ||Callee->getName().starts_with(StringRef("asan.module"))) {
     return;
   }
   if (Callee->isDeclaration()) {
@@ -638,7 +625,7 @@ void LoopHandlingPass::visitExploitation(Instruction *Inst) {
     if (!OpArg[0]->getType()->isPointerTy() ||!OpArg[1]->getType()->isPointerTy()) return;
 
     Value *ArgSize = NumZero;
-    if (Caller->getNumArgOperands() > 2) {
+    if (Caller->arg_size() > 2) {
       ArgSize = Caller->getArgOperand(2); // int32ty
     }
 
@@ -779,7 +766,7 @@ void LoopHandlingPass::processLoadInst(Instruction *Inst, Instruction *InsertPoi
   LoadInst *LoadI = dyn_cast<LoadInst>(Inst);
   Value *LoadOpr = LoadI->getPointerOperand();
   // StringRef VarName = LoadOpr->getName();
-  Type* VarType = LoadI->getPointerOperandType()->getPointerElementType();
+  Type* VarType = LoadI->getType();
   unsigned TySize = 0;
   if (VarType->isIntegerTy())
     TySize = VarType->getIntegerBitWidth();
@@ -922,7 +909,7 @@ bool LoopHandlingPass::runOnModule(Module &M) {
   initVariables(M);
 
   for (auto &F : M) {
-    if (F.isDeclaration() ||F.getName().startswith(StringRef("__chunk_")) || F.getName().startswith(StringRef("__dfsw_")) || F.getName().startswith(StringRef("asan.module"))) {
+    if (F.isDeclaration() ||F.getName().starts_with(StringRef("__chunk_")) || F.getName().starts_with(StringRef("__dfsw_")) || F.getName().starts_with(StringRef("asan.module"))) {
       continue;
     }
 
@@ -984,7 +971,7 @@ bool LoopHandlingPass::runOnModule(Module &M) {
 
       //Get an IR builder. Sets the insertion point to loop header
       IRBuilder<> HeaderBuilder(&*L->getHeader()->getFirstInsertionPt());
-      LoadInst *LoadLoopCnt = HeaderBuilder.CreateLoad(LoopCnt);
+      LoadInst *LoadLoopCnt = HeaderBuilder.CreateLoad(Int32Ty, LoopCnt);
       HeaderBuilder.CreateCall(PushNewObjFn,{BoolTrue,  LoadLoopCnt, HLoop});
       HeaderBuilder.CreateCall(DumpEachIterFn,{LoadLoopCnt});
       Value *Inc = HeaderBuilder.CreateAdd(LoadLoopCnt, NumOne);
@@ -996,7 +983,7 @@ bool LoopHandlingPass::runOnModule(Module &M) {
       for(BasicBlock *BB : Exits) {
         // errs() << "\nexit block : \n" << *BB;
         IRBuilder<> ExitBuilder(&*BB->getFirstInsertionPt());
-        LoadInst *LoadLoopCnt2 = ExitBuilder.CreateLoad(LoopCnt);
+        LoadInst *LoadLoopCnt2 = ExitBuilder.CreateLoad(Int32Ty, LoopCnt);
         ExitBuilder.CreateCall(DumpEachIterFn,{LoadLoopCnt2});
         ExitBuilder.CreateCall(PopObjFn, {HLoop});
         ExitBuilder.CreateStore(NumZero, LoopCnt);
@@ -1020,6 +1007,7 @@ static RegisterPass<LoopHandlingPass>
       /*is_analysis=*/false
       );
 
+#ifdef HAVE_LEGACY_PASS_MANAGER_BUILDER
 static void registerLoopHandlingPass(const PassManagerBuilder &,
                                  legacy::PassManagerBase &PM) {
   PM.add(llvm::createLoopSimplifyPass());
@@ -1037,3 +1025,4 @@ static RegisterStandardPasses
 static RegisterStandardPasses
     RegisterLoopHandlingPass0(PassManagerBuilder::EP_EnabledOnOptLevel0,
                           registerLoopHandlingPass);
+#endif

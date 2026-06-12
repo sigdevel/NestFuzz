@@ -4,6 +4,10 @@
   to write custom functions, modify custom/angora_abilist.txt first
  */
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include <assert.h>
 #include <fcntl.h>
 #include <stdarg.h>
@@ -22,6 +26,10 @@
 #include "./defs.h"
 #include "./dfsan_interface.h"
 #include "./loop_handlers.h"
+
+extern int __xstat(int vers, const char *path, struct stat *buf);
+extern int __fxstat(int vers, int fd, struct stat *buf);
+extern int __lxstat(int vers, const char *path, struct stat *buf);
 
 static int granularity = 1; // byte level
 

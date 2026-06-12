@@ -5,13 +5,21 @@ ROOT_DIR=$(dirname $BIN_PATH)
 
 set -euxo pipefail
 
-if [ -x "$(command -v llvm-config-10)"  ]; then
-    echo "Find llvm-config-10"
-elif [ -x "$(command -v llvm-config)" ]; then
-    echo "Find llvm-config"
-else
+if [ -z "${LLVM_CONFIG+x}" ]; then
+    for candidate in llvm-config-10 llvm-config-18 llvm-config-19 llvm-config-21 llvm-config; do
+        if [ -x "$(command -v ${candidate})" ]; then
+            LLVM_CONFIG="$(command -v ${candidate})"
+            break
+        fi
+    done
+fi
+
+if [ -z "${LLVM_CONFIG+x}" ] || [ ! -x "${LLVM_CONFIG}" ]; then
     exit 1
 fi
+
+echo "Find ${LLVM_CONFIG}"
+LLVM_PREFIX="$(${LLVM_CONFIG} --prefix)"
 
 PREFIX=${PREFIX:-${ROOT_DIR}/install/}
 
@@ -38,6 +46,6 @@ fi
 rm -rf build
 mkdir -p build
 cd build
-cmake -DCMAKE_INSTALL_PREFIX=${PREFIX} -DCMAKE_BUILD_TYPE=Release ..
+cmake -DCMAKE_INSTALL_PREFIX=${PREFIX} -DCMAKE_BUILD_TYPE=Release -DLT_LLVM_INSTALL_DIR=${LLVM_PREFIX} ..
 make # VERBOSE=1 
 make install # VERBOSE=1

@@ -140,7 +140,12 @@ typedef struct user_fpregs elf_fpregset_t;
 #include <linux/serial.h>
 #include <sys/msg.h>
 #include <sys/ipc.h>
+#if __has_include(<crypt.h>)
+#define SANITIZER_HAS_CRYPT_H 1
 #include <crypt.h>
+#else
+#define SANITIZER_HAS_CRYPT_H 0
+#endif
 #endif // SANITIZER_LINUX && !SANITIZER_ANDROID
 
 #if SANITIZER_ANDROID
@@ -241,7 +246,11 @@ namespace __sanitizer {
   unsigned struct_ustat_sz = SIZEOF_STRUCT_USTAT;
   unsigned struct_rlimit64_sz = sizeof(struct rlimit64);
   unsigned struct_statvfs64_sz = sizeof(struct statvfs64);
+#if SANITIZER_HAS_CRYPT_H
   unsigned struct_crypt_data_sz = sizeof(struct crypt_data);
+#else
+  unsigned struct_crypt_data_sz = 0;
+#endif
 #endif // SANITIZER_LINUX && !SANITIZER_ANDROID
 
 #if SANITIZER_LINUX && !SANITIZER_ANDROID
@@ -416,7 +425,7 @@ unsigned struct_ElfW_Phdr_sz = sizeof(Elf_Phdr);
   unsigned struct_input_id_sz = sizeof(struct input_id);
   unsigned struct_mtpos_sz = sizeof(struct mtpos);
   unsigned struct_rtentry_sz = sizeof(struct rtentry);
-  unsigned struct_termio_sz = sizeof(struct termio);
+  unsigned struct_termio_sz = 18;
   unsigned struct_vt_consize_sz = sizeof(struct vt_consize);
   unsigned struct_vt_sizes_sz = sizeof(struct vt_sizes);
   unsigned struct_vt_stat_sz = sizeof(struct vt_stat);

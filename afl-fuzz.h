@@ -419,7 +419,7 @@ u32 UR(u32 limit);
 
 /* run.c */
 
-void perform_dry_run();
+void perform_dry_run(char** argv);
 void init_forkserver(char** argv);
 u8   run_target(char** argv, u32 timeout);
 u8   common_fuzz_stuff(char** argv, u8* out_buf, u32 len, Chunk* tree, Track *track);
@@ -441,7 +441,7 @@ cJSON* tree_to_json(Chunk* chunk_head);
 Chunk *json_to_tree(cJSON* json_head);
 cJSON *track_to_json(Track *track);
 void free_tree(Chunk *tree, Boolean recurse);
-u8 fuzz_one();
+u8 fuzz_one(char** argv);
 
 /* signals.c */
 

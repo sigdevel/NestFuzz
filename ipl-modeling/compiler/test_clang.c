@@ -87,7 +87,7 @@ static void check_type(char *name) {
   }
 }
 
-static u8 check_if_assembler(u32 argc, const char **argv) {
+static u8 check_if_assembler(u32 argc, char **argv) {
   /* Check if a file with an assembler extension ("s" or "S") appears in argv */
 
   while (--argc) {
